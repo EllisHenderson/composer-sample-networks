@@ -14,30 +14,72 @@
 
 'use strict';
 
+
 const AdminConnection = require('composer-admin').AdminConnection;
-const BrowserFS = require('browserfs/dist/node/index');
 const BusinessNetworkConnection = require('composer-client').BusinessNetworkConnection;
 const BusinessNetworkDefinition = require('composer-common').BusinessNetworkDefinition;
+const IdCard = require('composer-common').IdCard;
+const MemoryCardStore = require('composer-common').MemoryCardStore;
 const path = require('path');
+
+const NS = 'org.hyperledger_composer.marbles';
+
+
+
+
 
 require('chai').should();
 
-const bfs_fs = BrowserFS.BFSRequire('fs');
-const NS = 'org.hyperledger_composer.marbles';
 
-describe('Marbles', () => {
+describe('Marbles', function () {
 
-    // let adminConnection;
+
     let businessNetworkConnection;
 
+
     before(() => {
-        BrowserFS.initialize(new BrowserFS.FileSystem.InMemory());
-        const adminConnection = new AdminConnection({ fs: bfs_fs });
-        return adminConnection.createProfile('defaultProfile', {
+        const connectionProfile = {
+            name: 'embedded',
             type: 'embedded'
-        })
+        };
+        const credentials = {
+            certificate: 'FAKE CERTIFICATE',
+            privateKey: 'FAKE PRIVATE KEY'
+        };
+
+
+        const deployerMetadata = {
+            version: 1,
+            userName: 'PeerAdmin',
+            roles: ['PeerAdmin', 'ChannelAdmin']
+        };
+        const deployerCard = new IdCard(deployerMetadata, connectionProfile);
+        deployerCard.setCredentials(credentials);
+
+
+        const userMetadata = {
+            version: 1,
+            userName: 'admin',
+            businessNetwork: 'marbles-network'
+        };
+        const userCard = new IdCard(userMetadata, connectionProfile);
+        userCard.setCredentials(credentials);
+
+
+        const deployerCardName = 'deployer';
+        const userCardName = 'user';
+
+
+        const cardStore = new MemoryCardStore();
+        const adminConnection = new AdminConnection({ cardStore: cardStore });
+
+
+        return adminConnection.importCard(deployerCardName, deployerCard)
             .then(() => {
-                return adminConnection.connect('defaultProfile', 'admin', 'Xurw3yU9zI0l');
+                return adminConnection.importCard(userCardName, userCard);
+            })
+            .then(() => {
+                return adminConnection.connect(deployerCardName);
             })
             .then(() => {
                 return BusinessNetworkDefinition.fromDirectory(path.resolve(__dirname, '..'));
@@ -46,8 +88,8 @@ describe('Marbles', () => {
                 return adminConnection.deploy(businessNetworkDefinition);
             })
             .then(() => {
-                businessNetworkConnection = new BusinessNetworkConnection({ fs: bfs_fs });
-                return businessNetworkConnection.connect('defaultProfile', 'marbles-network', 'admin', 'Xurw3yU9zI0l');
+                businessNetworkConnection = new BusinessNetworkConnection({ cardStore: cardStore });
+                return businessNetworkConnection.connect(userCardName);
             });
     });
 
