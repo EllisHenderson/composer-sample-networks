@@ -15,28 +15,66 @@
 'use strict';
 
 const AdminConnection = require('composer-admin').AdminConnection;
-const BrowserFS = require('browserfs/dist/node/index');
 const BusinessNetworkConnection = require('composer-client').BusinessNetworkConnection;
 const BusinessNetworkDefinition = require('composer-common').BusinessNetworkDefinition;
+const IdCard = require('composer-common').IdCard;
+const MemoryCardStore = require('composer-common').MemoryCardStore;
 const path = require('path');
+
+const NS = 'com.biz';
 
 require('chai').should();
 
-const bfs_fs = BrowserFS.BFSRequire('fs');
-const NS = 'org.acme.bond';
 
-describe('Publish Bond', () => {
+describe('Publish Bond', function() {
+
 
     let businessNetworkConnection;
 
+
     before(() => {
-        BrowserFS.initialize(new BrowserFS.FileSystem.InMemory());
-        const adminConnection = new AdminConnection({ fs: bfs_fs });
-        return adminConnection.createProfile('defaultProfile', {
+        const connectionProfile = {
+            name: 'embedded',
             type: 'embedded'
-        })
+        };
+        const credentials = {
+            certificate: 'FAKE CERTIFICATE',
+            privateKey: 'FAKE PRIVATE KEY'
+        };
+
+
+        const deployerMetadata = {
+            version: 1,
+            userName: 'PeerAdmin',
+            roles: [ 'PeerAdmin', 'ChannelAdmin' ]
+        };
+        const deployerCard = new IdCard(deployerMetadata, connectionProfile);
+        deployerCard.setCredentials(credentials);
+
+
+        const userMetadata = {
+            version: 1,
+            userName: 'admin',
+            businessNetwork: 'bond-network'
+        };
+        const userCard = new IdCard(userMetadata, connectionProfile);
+        userCard.setCredentials(credentials);
+
+
+        const deployerCardName = 'deployer';
+        const userCardName = 'user';
+
+
+        const cardStore = new MemoryCardStore();
+        const adminConnection = new AdminConnection({ cardStore: cardStore });
+
+
+        return adminConnection.importCard(deployerCardName, deployerCard)
             .then(() => {
-                return adminConnection.connect('defaultProfile', 'admin', 'Xurw3yU9zI0l');
+                return adminConnection.importCard(userCardName, userCard);
+            })
+            .then(() => {
+                return adminConnection.connect(deployerCardName);
             })
             .then(() => {
                 return BusinessNetworkDefinition.fromDirectory(path.resolve(__dirname, '..'));
@@ -45,10 +83,11 @@ describe('Publish Bond', () => {
                 return adminConnection.deploy(businessNetworkDefinition);
             })
             .then(() => {
-                businessNetworkConnection = new BusinessNetworkConnection({ fs: bfs_fs });
-                return businessNetworkConnection.connect('defaultProfile', 'bond-network', 'admin', 'Xurw3yU9zI0l');
+                businessNetworkConnection = new BusinessNetworkConnection({ cardStore: cardStore });
+                return businessNetworkConnection.connect(userCardName);
             });
     });
+
 
     describe('#publish', () => {
 
